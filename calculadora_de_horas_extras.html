@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Horas Extras</title>
+    <!-- Tailwind CSS CDN para estilização responsiva e moderna -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome para ícones legíveis e amigáveis -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS CDN para exportação em Excel (XLSX) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        /* Estilos customizados e ajuste de fontes */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+        /* Utilitários para badges e saldos */
+        .badge-positive {
+            background-color: #dcfce7;
+            color: #15803d;
+            border: 1px solid #bbf7d0;
+        }
+        .badge-negative {
+            background-color: #fee2e2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }
+        .badge-neutral {
+            background-color: #f3f4f6;
+            color: #4b5563;
+            border: 1px solid #e5e7eb;
+        }
+        /* Transição suave para modais e interações */
+        .transition-all-custom {
+            transition: all 0.2s ease-in-out;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-2 sm:p-4 md:p-6">
+
+    <!-- Conteúdo Principal -->
+    <main class="max-w-4xl mx-auto w-full space-y-4 sm:space-y-6">
+
+        <!-- Cabeçalho Principal -->
+        <header class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-200 text-center sm:text-left flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 flex items-center justify-center sm:justify-start gap-2">
+                    <i class="fa-solid fa-clock-rotate-left text-blue-600"></i>
+                    Horas Extras
+                </h1>
+                <p class="text-sm text-gray-500 mt-1">Controle de ponto e saldo de jornada (Padrão 08:20h)</p>
+            </div>
+            <!-- Ações Rápidas de Backup e Exportação -->
+            <div class="flex flex-wrap gap-2 justify-center">
+                <button onclick="exportarExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 shadow-sm transition-all-custom" title="Exportar para Excel (XLSX)">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <span>Excel</span>
+                </button>
+                <button onclick="exportarBackupJSON()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 shadow-sm transition-all-custom" title="Salvar Backup JSON">
+                    <i class="fa-solid fa-download"></i>
+                    <span>Backup</span>
+                </button>
+                <label class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 shadow-sm cursor-pointer transition-all-custom" title="Restaurar Backup JSON">
+                    <i class="fa-solid fa-upload"></i>
+                    <span>Importar</span>
+                    <input type="file" id="inputImportarJSON" accept=".json" onchange="importarBackupJSON(event)" class="hidden">
+                </label>
+            </div>
+        </header>
+
+        <!-- Navegação do Período de Apuração (Ciclos dia 21 ao dia 20) -->
+        <section class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-gray-200">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <button onclick="navegarPeriodo(-1)" class="w-full sm:w-auto bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all-custom">
+                    <i class="fa-solid fa-chevron-left"></i>
+                    <span>Período Anterior</span>
+                </button>
+
+                <div class="text-center">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-blue-600 bg-blue-50 px-3 py-1 rounded-full">Período Selecionado</span>
+                    <h2 id="labelPeriodoAtual" class="text-lg sm:text-xl font-bold text-gray-800 mt-1">
+                        --/--/---- a --/--/----
+                    </h2>
+                </div>
+
+                <button onclick="navegarPeriodo(1)" class="w-full sm:w-auto bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all-custom">
+                    <span>Próximo Período</span>
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+        </section>
+
+        <!-- Form de Cadastro / Edição de Registro Diário -->
+        <section class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-200">
+            <h3 id="formTitulo" class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-calendar-plus text-blue-600"></i>
+                Adicionar Registro Diário
+            </h3>
+
+            <form id="formRegistro" onsubmit="salvarRegistro(event)" class="space-y-4">
+                <input type="hidden" id="registroId">
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <!-- Data -->
+                    <div>
+                        <label for="inputData" class="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                        <input type="date" id="inputData" required class="w-full p-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800 text-sm">
+                    </div>
+
+                    <!-- Hora Entrada -->
+                    <div>
+                        <label for="inputEntrada" class="block text-sm font-medium text-gray-700 mb-1">Entrada</label>
+                        <input type="time" id="inputEntrada" required class="w-full p-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800 text-sm">
+                    </div>
+
+                    <!-- Hora Saída -->
+                    <div>
+                        <label for="inputSaida" class="block text-sm font-medium text-gray-700 mb-1">Saída</label>
+                        <input type="time" id="inputSaida" required class="w-full p-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800 text-sm">
+                    </div>
+                </div>
+
+                <!-- Botões de Ação do Form -->
+                <div class="flex flex-wrap gap-2 justify-end pt-2">
+                    <button type="button" id="btnCancelarEdicao" onclick="cancelarEdicao()" class="hidden bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all-custom">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 shadow-md transition-all-custom">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span id="btnSalvarTexto">Salvar Registro</span>
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Resumo do Período -->
+        <section class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <!-- Dias Registrados -->
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 text-center">
+                <span class="text-xs text-gray-500 font-medium uppercase block">Dias Trabalhados</span>
+                <span id="resumoDias" class="text-xl sm:text-2xl font-bold text-gray-800 mt-1 block">0</span>
+            </div>
+
+            <!-- Total Trabalhado -->
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 text-center">
+                <span class="text-xs text-gray-500 font-medium uppercase block">Horas Trabalhadas</span>
+                <span id="resumoTrabalhado" class="text-xl sm:text-2xl font-bold text-gray-800 mt-1 block">00:00</span>
+            </div>
+
+            <!-- Total Previsto -->
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 text-center">
+                <span class="text-xs text-gray-500 font-medium uppercase block">Horas Previstas</span>
+                <span id="resumoPrevisto" class="text-xl sm:text-2xl font-bold text-gray-800 mt-1 block">00:00</span>
+            </div>
+
+            <!-- Saldo Acumulado -->
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 text-center col-span-2 lg:col-span-1">
+                <span class="text-xs text-gray-500 font-medium uppercase block">Saldo Acumulado</span>
+                <span id="resumoSaldo" class="text-xl sm:text-2xl font-bold badge-neutral px-3 py-0.5 rounded-lg inline-block mt-1">00:00</span>
+            </div>
+        </section>
+
+        <!-- Tabela / Lista de Registros -->
+        <section class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-200">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-blue-600"></i>
+                    Registros do Período
+                </h3>
+                <span id="contadorRegistros" class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-semibold">0 registros</span>
+            </div>
+
+            <!-- Tabela em Desktop -->
+            <div class="hidden md:block overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            <th class="py-3 px-4">Data</th>
+                            <th class="py-3 px-4">Entrada</th>
+                            <th class="py-3 px-4">Saída</th>
+                            <th class="py-3 px-4 text-center">Saldo Diário</th>
+                            <th class="py-3 px-4 text-right">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaCorpo" class="divide-y divide-gray-100 text-sm">
+                        <!-- Conteúdo injetado via JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Cartões em Mobile -->
+            <div id="listaCardsMobile" class="grid grid-cols-1 gap-3 md:hidden">
+                <!-- Conteúdo injetado via JS -->
+            </div>
+
+            <!-- Mensagem quando não houver dados -->
+            <div id="mensagemVazio" class="text-center py-8 text-gray-400 hidden">
+                <i class="fa-regular fa-folder-open text-4xl mb-2"></i>
+                <p class="text-sm">Nenhum registro encontrado para este período.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- Rodapé -->
+    <footer class="max-w-4xl mx-auto w-full text-center text-xs text-gray-400 mt-8 mb-4">
+        Calculadora de Horas Extras &copy; 2026 — Desenvolvido pelo seu marido Gostosão.
+    </footer>
+
+    <!-- Caixa de Notificação / Alerta Flutuante (Substitui alert) -->
+    <div id="toastNotification" class="fixed bottom-5 right-5 max-w-xs w-full bg-gray-900 text-white px-4 py-3 rounded-xl shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-3 z-50">
+        <i id="toastIcon" class="fa-solid fa-circle-info text-blue-400 text-lg"></i>
+        <span id="toastMessage" class="text-sm">Mensagem do sistema</span>
+    </div>
+
+    <!-- Script Principal com TODA a Lógica da Aplicação -->
+    <script>
+        /**
+         * CALCULADORA DE HORAS EXTRAS - LÓGICA DO SISTEMA
+         * Regra de Jornada: 08:20 diária (500 minutos)
+         * Ciclo Mensal: Dia 21 de um mês até dia 20 do mês seguinte
+         */
+
+        const MINUTOS_JORNADA_PADRAO = 500; // 8h20m = (8 * 60) + 20 = 500 minutos
+        const CHAVE_STORAGE = "horas_extras_dados_v1";
+
+        // Estado da aplicação
+        let estado = {
+            anoInicioCiclo: 2026,
+            mesInicioCiclo: 10, // 10 = Outubro (Data inicial padrão: 21/10/2026)
+            registros: {} // Estrutura: { "2026-10-21_2026-11-20": [ { id, data, entrada, saida } ] }
+        };
+
+        /**
+         * Inicialização do App ao carregar a página
+         */
+        window.onload = function () {
+            carregarDadosStorage();
+            inicializarCicloAtual();
+            renderizarTela();
+        };
+
+        /**
+         * Mostra notificações tipo Toast (Evita alert)
+         */
+        function mostrarToast(mensagem, tipo = 'info') {
+            const toast = document.getElementById('toastNotification');
+            const messageEl = document.getElementById('toastMessage');
+            const iconEl = document.getElementById('toastIcon');
+
+            messageEl.textContent = mensagem;
+
+            if (tipo === 'sucesso') {
+                iconEl.className = 'fa-solid fa-circle-check text-green-400 text-lg';
+            } else if (tipo === 'erro') {
+                iconEl.className = 'fa-solid fa-circle-exclamation text-red-400 text-lg';
+            } else {
+                iconEl.className = 'fa-solid fa-circle-info text-blue-400 text-lg';
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3500);
+        }
+
+        /**
+         * Obtém a chave do ciclo de apuração atual (ex: "2026-10-21_2026-11-20")
+         */
+        function getChaveCicloAtual() {
+            const dataInicio = new Date(estado.anoInicioCiclo, estado.mesInicioCiclo - 1, 21);
+            
+            // O término é no mês seguinte dia 20
+            const dataFim = new Date(estado.anoInicioCiclo, estado.mesInicioCiclo, 20);
+
+            const strInicio = formatarDataISO(dataInicio);
+            const strFim = formatarDataISO(dataFim);
+
+            return `${strInicio}_${strFim}`;
+        }
+
+        /**
+         * Formata objeto Date para "YYYY-MM-DD"
+         */
+        function formatarDataISO(date) {
+            const ano = date.getFullYear();
+            const mes = String(date.getMonth() + 1).padStart(2, '0');
+            const dia = String(date.getDate()).padStart(2, '0');
+            return `${ano}-${mes}-${dia}`;
+        }
+
+        /**
+         * Formata "YYYY-MM-DD" para "DD/MM/YYYY"
+         */
+        function formatarDataBR(dataISO) {
+            if (!dataISO) return "";
+            const partes = dataISO.split('-');
+            return `${partes[2]}/${partes[1]}/${partes[0]}`;
+        }
+
+        /**
+         * Define a data inicial baseando-se no ciclo padrão (21/10/2026 a 20/11/2026) ou data atual
+         */
+        function inicializarCicloAtual() {
+            // Se o estado não tiver sido carregado previamente, inicializamos em Outubro/2026 conforme requisito
+            if (!estado.anoInicioCiclo || !estado.mesInicioCiclo) {
+                estado.anoInicioCiclo = 2026;
+                estado.mesInicioCiclo = 10;
+            }
+        }
+
+        /**
+         * Navega entre ciclos mensais
+         */
+        function navegarPeriodo(delta) {
+            let novoMes = estado.mesInicioCiclo + delta;
+            let novoAno = estado.anoInicioCiclo;
+
+            if (novoMes > 12) {
+                novoMes = 1;
+                novoAno++;
+            } else if (novoMes < 1) {
+                novoMes = 12;
+                novoAno--;
+            }
+
+            estado.mesInicioCiclo = novoMes;
+            estado.anoInicioCiclo = novoAno;
+
+            cancelarEdicao();
+            renderizarTela();
+        }
+
+        /**
+         * Converte horário HH:MM para total em minutos
+         */
+        function horaParaMinutos(horaStr) {
+            if (!horaStr) return 0;
+            const [horas, minutos] = horaStr.split(':').map(Number);
+            return (horas * 60) + minutos;
+        }
+
+        /**
+         * Converte minutos para o formato HH:MM
+         */
+        function minutosParaHora(minutosTotais) {
+            const minsAbs = Math.abs(minutosTotais);
+            const hrs = Math.floor(minsAbs / 60);
+            const mins = minsAbs % 60;
+            const hrsStr = String(hrs).padStart(2, '0');
+            const minsStr = String(mins).padStart(2, '0');
+            return `${hrsStr}:${minsStr}`;
+        }
+
+        /**
+         * Calcula duração em minutos considerando a virada da noite (saída < entrada)
+         */
+        function calcularDuracaoTrabalhada(entradaStr, saidaStr) {
+            const minEntrada = horaParaMinutos(entradaStr);
+            let minSaida = horaParaMinutos(saidaStr);
+
+            // Virada da noite (ex: 22:00 às 06:20)
+            if (minSaida < minEntrada) {
+                minSaida += 24 * 60; // Adiciona 24 horas (1440 mins)
+            }
+
+            return minSaida - minEntrada;
+        }
+
+        /**
+         * Salva ou atualiza um registro no ciclo ativo
+         */
+        function salvarRegistro(event) {
+            event.preventDefault();
+
+            const id = document.getElementById('registroId').value;
+            const data = document.getElementById('inputData').value;
+            const entrada = document.getElementById('inputEntrada').value;
+            const saida = document.getElementById('inputSaida').value;
+
+            if (!data || !entrada || !saida) {
+                mostrarToast('Preencha todos os campos corretamente.', 'erro');
+                return;
+            }
+
+            // Identificar automaticamente se a data pertence ao ciclo atual
+            const chaveCiclo = getChaveCicloAtual();
+            const [strInicio, strFim] = chaveCiclo.split('_');
+
+            if (data < strInicio || data > strFim) {
+                mostrarToast(`A data deve estar no período de ${formatarDataBR(strInicio)} a ${formatarDataBR(strFim)}.`, 'erro');
+                return;
+            }
+
+            if (!estado.registros[chaveCiclo]) {
+                estado.registros[chaveCiclo] = [];
+            }
+
+            const registrosCiclo = estado.registros[chaveCiclo];
+
+            // Validar se a data já foi cadastrada (em caso de novo registro)
+            const jaExiste = registrosCiclo.find(r => r.data === data && r.id !== id);
+            if (jaExiste) {
+                mostrarToast('Já existe um registro cadastrado para esta data!', 'erro');
+                return;
+            }
+
+            if (id) {
+                // Editar Registro Existente
+                const idx = registrosCiclo.findIndex(r => r.id === id);
+                if (idx !== -1) {
+                    registrosCiclo[idx] = { id, data, entrada, saida };
+                    mostrarToast('Registro atualizado com sucesso!', 'sucesso');
+                }
+            } else {
+                // Criar Novo Registro
+                const novoRegistro = {
+                    id: 'reg_' + Date.now(),
+                    data,
+                    entrada,
+                    saida
+                };
+                registrosCiclo.push(novoRegistro);
+                mostrarToast('Registro adicionado com sucesso!', 'sucesso');
+            }
+
+            salvarDadosStorage();
+            cancelarEdicao();
+            renderizarTela();
+        }
+
+        /**
+         * Prepara a interface para editar um registro
+         */
+        function editarRegistro(id) {
+            const chaveCiclo = getChaveCicloAtual();
+            const registrosCiclo = estado.registros[chaveCiclo] || [];
+            const registro = registrosCiclo.find(r => r.id === id);
+
+            if (!registro) return;
+
+            document.getElementById('registroId').value = registro.id;
+            document.getElementById('inputData').value = registro.data;
+            document.getElementById('inputEntrada').value = registro.entrada;
+            document.getElementById('inputSaida').value = registro.saida;
+
+            document.getElementById('formTitulo').innerHTML = `<i class="fa-solid fa-pen-to-square text-blue-600"></i> Editar Registro`;
+            document.getElementById('btnSalvarTexto').textContent = 'Atualizar Registro';
+            document.getElementById('btnCancelarEdicao').classList.remove('hidden');
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        /**
+         * Cancela a edição e limpa os campos do formulário
+         */
+        function cancelarEdicao() {
+            document.getElementById('registroId').value = '';
+            document.getElementById('formRegistro').reset();
+            document.getElementById('formTitulo').innerHTML = `<i class="fa-solid fa-calendar-plus text-blue-600"></i> Adicionar Registro Diário`;
+            document.getElementById('btnSalvarTexto').textContent = 'Salvar Registro';
+            document.getElementById('btnCancelarEdicao').classList.add('hidden');
+        }
+
+        /**
+         * Exclui um registro após confirmação
+         */
+        function excluirRegistro(id) {
+            if (!confirm('Deseja realmente excluir este registro?')) return;
+
+            const chaveCiclo = getChaveCicloAtual();
+            if (estado.registros[chaveCiclo]) {
+                estado.registros[chaveCiclo] = estado.registros[chaveCiclo].filter(r => r.id !== id);
+                salvarDadosStorage();
+                mostrarToast('Registro excluído com sucesso.', 'info');
+                renderizarTela();
+            }
+        }
+
+        /**
+         * Renderiza as informações na tela
+         */
+        function renderizarTela() {
+            const chaveCiclo = getChaveCicloAtual();
+            const [strInicio, strFim] = chaveCiclo.split('_');
+
+            // Atualizar Rótulo do Período
+            document.getElementById('labelPeriodoAtual').textContent = `${formatarDataBR(strInicio)} a ${formatarDataBR(strFim)}`;
+
+            // Definir min e max no campo de data do form para o ciclo atual
+            const inputData = document.getElementById('inputData');
+            inputData.min = strInicio;
+            inputData.max = strFim;
+
+            // Obter e ordenar registros do ciclo
+            const registrosCiclo = (estado.registros[chaveCiclo] || []).slice().sort((a, b) => a.data.localeCompare(b.data));
+
+            const tabelaCorpo = document.getElementById('tabelaCorpo');
+            const listaCardsMobile = document.getElementById('listaCardsMobile');
+            const mensagemVazio = document.getElementById('mensagemVazio');
+            const contadorRegistros = document.getElementById('contadorRegistros');
+
+            tabelaCorpo.innerHTML = '';
+            listaCardsMobile.innerHTML = '';
+
+            contadorRegistros.textContent = `${registrosCiclo.length} ${registrosCiclo.length === 1 ? 'registro' : 'registros'}`;
+
+            if (registrosCiclo.length === 0) {
+                mensagemVazio.classList.remove('hidden');
+            } else {
+                mensagemVazio.classList.add('hidden');
+            }
+
+            let totalMinutosTrabalhados = 0;
+            let totalMinutosPrevistos = 0;
+            let totalSaldoMinutos = 0;
+
+            registrosCiclo.forEach(reg => {
+                const duracaoMinutos = calcularDuracaoTrabalhada(reg.entrada, reg.saida);
+                const saldoMinutos = duracaoMinutos - MINUTOS_JORNADA_PADRAO;
+
+                totalMinutosTrabalhados += duracaoMinutos;
+                totalMinutosPrevistos += MINUTOS_JORNADA_PADRAO;
+                totalSaldoMinutos += saldoMinutos;
+
+                // Formatar Exibição do Saldo Diário (+00:40, -00:20, 00:00)
+                let classeBadge = 'badge-neutral';
+                let sinal = '';
+                if (saldoMinutos > 0) {
+                    classeBadge = 'badge-positive';
+                    sinal = '+';
+                } else if (saldoMinutos < 0) {
+                    classeBadge = 'badge-negative';
+                    sinal = '-';
+                }
+
+                const strSaldoDiario = `${sinal}${minutosParaHora(saldoMinutos)}`;
+                const strDuracao = minutosParaHora(duracaoMinutos);
+
+                // Injetar linha na Tabela (Desktop)
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-50 transition-all-custom";
+                tr.innerHTML = `
+                    <td class="py-3 px-4 font-semibold text-gray-800">${formatarDataBR(reg.data)}</td>
+                    <td class="py-3 px-4 text-gray-600">${reg.entrada}</td>
+                    <td class="py-3 px-4 text-gray-600">${reg.saida} <span class="text-xs text-gray-400">(${strDuracao}h)</span></td>
+                    <td class="py-3 px-4 text-center">
+                        <span class="${classeBadge} px-2.5 py-1 rounded-lg font-bold text-xs inline-block">
+                            ${strSaldoDiario}
+                        </span>
+                    </td>
+                    <td class="py-3 px-4 text-right space-x-1">
+                        <button onclick="editarRegistro('${reg.id}')" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-all-custom" title="Editar">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button onclick="excluirRegistro('${reg.id}')" class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-all-custom" title="Excluir">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
+                `;
+                tabelaCorpo.appendChild(tr);
+
+                // Injetar Card (Mobile)
+                const card = document.createElement('div');
+                card.className = "bg-gray-50 p-3.5 rounded-xl border border-gray-200 flex justify-between items-center";
+                card.innerHTML = `
+                    <div>
+                        <div class="font-bold text-gray-800 text-sm mb-0.5">${formatarDataBR(reg.data)}</div>
+                        <div class="text-xs text-gray-500">
+                            ${reg.entrada} às ${reg.saida} (${strDuracao}h)
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="${classeBadge} px-2.5 py-1 rounded-lg font-bold text-xs">
+                            ${strSaldoDiario}
+                        </span>
+                        <button onclick="editarRegistro('${reg.id}')" class="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg">
+                            <i class="fa-solid fa-pen text-xs"></i>
+                        </button>
+                        <button onclick="excluirRegistro('${reg.id}')" class="p-1.5 text-red-600 hover:bg-red-100 rounded-lg">
+                            <i class="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                    </div>
+                `;
+                listaCardsMobile.appendChild(card);
+            });
+
+            // Atualizar Resumo
+            document.getElementById('resumoDias').textContent = registrosCiclo.length;
+            document.getElementById('resumoTrabalhado').textContent = `${minutosParaHora(totalMinutosTrabalhados)}h`;
+            document.getElementById('resumoPrevisto').textContent = `${minutosParaHora(totalMinutosPrevistos)}h`;
+
+            // Elemento do Saldo Acumulado
+            const elResumoSaldo = document.getElementById('resumoSaldo');
+            let sinalTotal = '';
+            let classeTotal = 'badge-neutral';
+
+            if (totalSaldoMinutos > 0) {
+                sinalTotal = '+';
+                classeTotal = 'badge-positive';
+            } else if (totalSaldoMinutos < 0) {
+                sinalTotal = '-';
+                classeTotal = 'badge-negative';
+            }
+
+            elResumoSaldo.className = `text-xl sm:text-2xl font-bold ${classeTotal} px-3 py-0.5 rounded-lg inline-block mt-1`;
+            elResumoSaldo.textContent = `${sinalTotal}${minutosParaHora(totalSaldoMinutos)}`;
+        }
+
+        /**
+         * Persistência de Dados no LocalStorage
+         */
+        function salvarDadosStorage() {
+            try {
+                localStorage.setItem(CHAVE_STORAGE, JSON.stringify(estado));
+            } catch (e) {
+                mostrarToast('Erro ao salvar no LocalStorage.', 'erro');
+            }
+        }
+
+        function carregarDadosStorage() {
+            try {
+                const dadosStr = localStorage.getItem(CHAVE_STORAGE);
+                if (dadosStr) {
+                    const dadosObj = JSON.parse(dadosStr);
+                    if (dadosObj && dadosObj.registros) {
+                        estado = dadosObj;
+                    }
+                }
+            } catch (e) {
+                mostrarToast('Erro ao carregar dados salvos.', 'erro');
+            }
+        }
+
+        /**
+         * Exportação para Excel (XLSX) com fallback automático para CSV
+         */
+        function exportarExcel() {
+            const chaveCiclo = getChaveCicloAtual();
+            const [strInicio, strFim] = chaveCiclo.split('_');
+            const registrosCiclo = (estado.registros[chaveCiclo] || []).slice().sort((a, b) => a.data.localeCompare(b.data));
+
+            if (registrosCiclo.length === 0) {
+                mostrarToast('Nenhum registro para exportar no período selecionado.', 'erro');
+                return;
+            }
+
+            const nomeArquivo = `horas-extras-${strInicio}-a-${strFim}`;
+
+            // Verifica se a biblioteca XLSX está carregada
+            if (typeof XLSX !== 'undefined') {
+                try {
+                    const dadosExportacao = [];
+
+                    // Informações do Cabeçalho
+                    dadosExportacao.push(["RELATÓRIO DE HORAS EXTRAS"]);
+                    dadosExportacao.push([`Período: ${formatarDataBR(strInicio)} a ${formatarDataBR(strFim)}`]);
+                    dadosExportacao.push([]); // Linha em branco
+                    dadosExportacao.push(["Data", "Entrada", "Saída", "Duração", "Saldo Diário"]);
+
+                    let totalTrabalhado = 0;
+                    let totalPrevisto = 0;
+                    let totalSaldo = 0;
+
+                    registrosCiclo.forEach(r => {
+                        const duracao = calcularDuracaoTrabalhada(r.entrada, r.saida);
+                        const saldo = duracao - MINUTOS_JORNADA_PADRAO;
+
+                        totalTrabalhado += duracao;
+                        totalPrevisto += MINUTOS_JORNADA_PADRAO;
+                        totalSaldo += saldo;
+
+                        const sinal = saldo > 0 ? '+' : (saldo < 0 ? '-' : '');
+
+                        dadosExportacao.push([
+                            formatarDataBR(r.data),
+                            r.entrada,
+                            r.saida,
+                            minutosParaHora(duracao),
+                            `${sinal}${minutosParaHora(saldo)}`
+                        ]);
+                    });
+
+                    dadosExportacao.push([]); // Linha em branco
+                    dadosExportacao.push(["RESUMO DO PERÍODO"]);
+                    dadosExportacao.push(["Dias Trabalhados", registrosCiclo.length]);
+                    dadosExportacao.push(["Horas Trabalhadas", minutosParaHora(totalTrabalhado)]);
+                    dadosExportacao.push(["Horas Previstas", minutosParaHora(totalPrevisto)]);
+
+                    const sinalTotal = totalSaldo > 0 ? '+' : (totalSaldo < 0 ? '-' : '');
+                    dadosExportacao.push(["Saldo Acumulado", `${sinalTotal}${minutosParaHora(totalSaldo)}`]);
+
+                    const wb = XLSX.utils.book_new();
+                    const ws = XLSX.utils.aoa_to_sheet(dadosExportacao);
+                    XLSX.utils.book_append_sheet(wb, ws, "Horas Extras");
+
+                    XLSX.writeFile(wb, `${nomeArquivo}.xlsx`);
+                    mostrarToast('Arquivo Excel exportado com sucesso!', 'sucesso');
+                    return;
+                } catch (e) {
+                    console.error("Falha ao exportar via SheetJS, utilizando CSV fallback.", e);
+                }
+            }
+
+            // Fallback CSV caso SheetJS não esteja disponível
+            exportarCSV(registrosCiclo, nomeArquivo);
+        }
+
+        /**
+         * Fallback CSV
+         */
+        function exportarCSV(registros, nomeArquivo) {
+            let csv = "Data;Entrada;Saida;Duracao;Saldo\n";
+            registros.forEach(r => {
+                const duracao = calcularDuracaoTrabalhada(r.entrada, r.saida);
+                const saldo = duracao - MINUTOS_JORNADA_PADRAO;
+                const sinal = saldo > 0 ? '+' : (saldo < 0 ? '-' : '');
+                csv += `${formatarDataBR(r.data)};${r.entrada};${r.saida};${minutosParaHora(duracao)};${sinal}${minutosParaHora(saldo)}\n`;
+            });
+
+            const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute("download", `${nomeArquivo}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            mostrarToast('Exportado em formato CSV.', 'sucesso');
+        }
+
+        /**
+         * Exportação de Backup JSON
+         */
+        function exportarBackupJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(estado, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `backup-horas-extras-${formatarDataISO(new Date())}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+            mostrarToast('Backup JSON gerado com sucesso!', 'sucesso');
+        }
+
+        /**
+         * Importação de Backup JSON com Validação
+         */
+        function importarBackupJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const dadosImportados = JSON.parse(e.target.result);
+                    if (dadosImportados && typeof dadosImportados.registros === 'object') {
+                        // Mescla ou substitui preservando a estrutura
+                        estado = dadosImportados;
+                        salvarDadosStorage();
+                        renderizarTela();
+                        mostrarToast('Backup restaurado com sucesso!', 'sucesso');
+                    } else {
+                        mostrarToast('Arquivo de backup inválido.', 'erro');
+                    }
+                } catch (err) {
+                    mostrarToast('Erro ao ler o arquivo JSON.', 'erro');
+                }
+            };
+            reader.readAsText(file);
+            // Limpa o input file
+            event.target.value = '';
+        }
+    </script>
+</body>
+</html>
